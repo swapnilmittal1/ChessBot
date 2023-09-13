@@ -1,0 +1,87 @@
+import os
+import pandas as pd
+import numpy as np
+import chess
+import chess.pgn
+
+def get_board_features(chessboard):
+    state_features = []
+    for sq in chess.SQUARES:
+        state_features.append(str(chessboard.piece_at(sq)))
+    return state_features
+
+
+def get_move_features(chess_move):
+    src = np.zeros(64)
+    dest = np.zeros(64)
+    src[chess_move.from_square] = 1
+    dest[chess_move.to_square] = 1
+    return src, dest
+
+
+def play(game_board, move_idx=0):
+    if move_idx == len(game_moves):
+        return
+    else:
+        condition = (white_won and game_board.turn) or (not white_won and not game_board.turn)
+        if condition:
+            valid_moves = list(game_board.legal_moves)
+            optimal_move = game_moves[move_idx]
+            non_optimal_moves = [m for m in valid_moves if m != optimal_move]
+
+            state_features = get_board_features(game_board)
+            row = np.array([], dtype=object)
+
+            for m in non_optimal_moves:
+                src, dest = get_move_features(m)
+                row = np.concatenate((state_features, src, dest, [False]))
+                data.append(row)
+
+            src, dest = get_move_features(optimal_move)
+            row = np.concatenate((state_features, src, dest, [True]))
+            data.append(row)
+
+        game_board.push(game_moves[move_idx])
+        return play(game_board, move_idx + 1)
+
+
+def process_game_data(folder_path, file_name):
+    full_game_path = os.path.join(folder_path, file_name)
+    with open(full_game_path) as pgn_file:
+        single_game = chess.pgn.read_game(pgn_file)
+
+    outcome = {'1-0': True, '1/2-1/2': None, '0-1': False}[single_game.headers['Result']]
+
+    global white_won
+    global game_moves
+    global data
+
+    data = []
+
+    if outcome is None:
+        return
+    else:
+        white_won = outcome
+
+    game_moves = list(single_game.mainline_moves())
+    initial_board = single_game.board()
+
+    play(initial_board)
+
+    column_headers = chess.SQUARE_NAMES + ['from_' + sq for sq in chess.SQUARE_NAMES] + ['to_' + sq for sq in chess.SQUARE_NAMES] + ['good_move']
+    df = pd.DataFrame(data=data, columns=column_headers)
+
+    print(df.shape)
+
+    new_csv_file_name = file_name.replace('pgn', 'csv')
+    csv_directory = '/Users/ethan/Desktop/chess-engine/Data/CSV_BOTVINNIK'
+    new_csv_path = os.path.join(csv_directory, new_csv_file_name)
+
+    df.to_csv(new_csv_path, index=False)
+
+    return
+
+
+for root, _, files in os.walk('/Users/ethan/Desktop/chess-engine/Data/PGN/Raw_game/Raw_game/Botvinnik'):
+    for file in files:
+        process_game_data(root, file)
